@@ -98,9 +98,10 @@ type Loadpoint struct {
 	Enable, Disable loadpoint.ThresholdConfig
 
 	// from yaml
-	DefaultMode api.ChargeMode `mapstructure:"mode"`     // Default charge mode, used for disconnect
-	Title       string         `mapstructure:"title"`    // UI title
-	Priority    int            `mapstructure:"priority"` // Priority
+	DefaultMode       api.ChargeMode `mapstructure:"mode"`              // Default charge mode, used for disconnect
+	Title             string         `mapstructure:"title"`             // UI title
+	Priority          int            `mapstructure:"priority"`          // Priority
+	VehicleMaxCurrent bool           `mapstructure:"vehicleMaxCurrent"` // Route MaxCurrent to vehicle's CurrentController instead of charger
 
 	// from yaml, deprecated
 	GuardDuration_ time.Duration `mapstructure:"guardduration"` // ignored, present for compatibility
@@ -916,7 +917,14 @@ func (lp *Loadpoint) setLimit(current float64) error {
 	// set current
 	if current != lp.offeredCurrent && current >= effMinCurrent {
 		var err error
-		if charger, ok := api.Cap[api.ChargerEx](lp.charger); ok {
+		// vehicleMaxCurrent: route current changes to the vehicle's
+		// CurrentController when available. Useful when the charger cannot
+		// modulate current mid-session but the connected EV can (e.g. Tesla
+		// API, Fiat). Falls back to the charger when no vehicle is identified
+		// or the active vehicle does not implement CurrentController.
+		if vc, ok := api.Cap[api.CurrentController](lp.GetVehicle()); ok && lp.VehicleMaxCurrent {
+			err = vc.MaxCurrent(int64(current))
+		} else if charger, ok := api.Cap[api.ChargerEx](lp.charger); ok {
 			err = charger.MaxCurrentMillis(current)
 		} else {
 			err = lp.charger.MaxCurrent(int64(current))
